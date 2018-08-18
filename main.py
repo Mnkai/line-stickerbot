@@ -1,4 +1,3 @@
-import logging
 import os
 import sys
 import urllib.parse
@@ -9,8 +8,6 @@ import cssutils
 import requests
 from bs4 import BeautifulSoup
 from wand.image import Image
-
-cssutils.log.setLevel(logging.CRITICAL)
 
 # The Line store URL format.
 LINE_URL = "https://store.line.me/stickershop/product/"
