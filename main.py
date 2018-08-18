@@ -1,104 +1,65 @@
-import json
 import logging
-from time import sleep
-import urllib.request
+import os
+import sys
 import urllib.parse
-import requests
+import urllib.request
+from zipfile import ZipFile
+
 import cssutils
+import requests
 from bs4 import BeautifulSoup
 from wand.image import Image
-from zipfile import ZipFile
-from OpenSSL import SSL
-import os
 
 cssutils.log.setLevel(logging.CRITICAL)
-
-
-# This will mark the last update we've checked
-with open('updatefile', 'r') as f:
-    last_update = int(f.readline().strip())
-# Here, insert the token BotFather gave you for your bot.
-TOKEN = '<token>'
-# This is the url for communicating with your bot
-URL = 'https://api.telegram.org/bot%s/' % TOKEN
 
 # The Line store URL format.
 LINE_URL = "https://store.line.me/stickershop/product/"
 
-# The text to display when the sent URL doesn't match.
-WRONG_URL_TEXT = ("That doesn't appear to be a valid URL. "
-                  "To start, send me a URL that starts with " + LINE_URL)
 
 def dl_stickers(page):
     images = page.find_all('span', attrs={"style": not ""})
     for i in images:
-        imageurl = i['style']
-        imageurl = cssutils.parseStyle(imageurl)
-        imageurl = imageurl['background-image']
-        imageurl = imageurl.replace('url(', '').replace(')', '')
-        imageurl = imageurl[1:-15]
-        response = urllib.request.urlopen(imageurl)
-        resize_sticker(response, imageurl)
+        image_url = i['style']
+        image_url = cssutils.parseStyle(image_url)
+        image_url = image_url['background-image']
+        image_url = image_url.replace('url(', '').replace(')', '')
+        image_url = image_url[1:-15]
+        response = urllib.request.urlopen(image_url)
+        resize_sticker(response, image_url)
+
 
 def resize_sticker(image, filename):
-    filen = filename[-7:]
     with Image(file=image) as img:
-        ratio = 1
         if img.width > img.height:
-            ratio = 512.0/img.width
+            ratio = 512.0 / img.width
+            img.resize(512, int(round(img.height * ratio)), 'mitchell')
+        elif img.width == img.height:
+            img.resize(512, 512)
         else:
-            ratio = 512.0/img.height
-        img.resize(int(img.width*ratio), int(img.height*ratio), 'mitchell')
-        img.save(filename=("downloads/" + filen))
+            ratio = 512.0 / img.height
+            img.resize(int(round(img.width * ratio)), 512, 'mitchell')
 
-def send_stickers(page):
+        img.save(filename=("downloads/" + filename.split(sep='/')[6] + ".png"))
+
+
+def save_stickers(page, title):
     dl_stickers(page)
-    with ZipFile('stickers.zip', 'w') as stickerzip:
+
+    with ZipFile(title + '.zip', 'w') as sticker_zip:
         for root, dirs, files in os.walk("downloads/"):
             for file in files:
-                stickerzip.write(os.path.join(root, file))
+                sticker_zip.write(os.path.join(root, file))
                 os.remove(os.path.join(root, file))
-    requests.post(URL + 'sendDocument', params=dict(
-        chat_id = update['message']['chat']['id']
-    ), files=dict(
-        document = open('stickers.zip', 'rb')
-    ))
-    print("snet;)")
 
 
-# We want to keep checking for updates. So this must be a never ending loop
-while True:
-    # My chat is up and running, I need to maintain it! Get me all chat updates
-    get_updates = json.loads(requests.get(URL + 'getUpdates',
-                                          params=dict(offset=last_update)).content.decode())
-    # Ok, I've got 'em. Let's iterate through each one
-    for update in get_updates['result']:
-        # First make sure I haven't read this update yet
-        if last_update < update['update_id']:
-            last_update = update['update_id']
-            f = open('updatefile', 'w')
-            f.write(str(last_update))
-            f.close()
-            # I've got a new update. Let's see what it is.
-            if 'message' in update:
-                if update['message']['text'][:42] == LINE_URL:
-                    # It's a message! Let's send it back :D
-                    sticker_url = update['message']['text']
-                    user = update['message']['chat']['id']
-                    request = requests.get(sticker_url).text
-                    stickerpage = BeautifulSoup(request, "html.parser")
-                    stickertitle = stickerpage.title.string
-                    name = update['message']['from']['first_name']
-                    requests.get(URL + 'sendMessage',
-                                 params=dict(chat_id=update['message']['chat']['id'],
-                                             text="Fetching \"" + stickertitle + "\""))
-                    print(name + " (" + str(user) + ")"+ " requested " + sticker_url)
-                    send_stickers(stickerpage)
-                else:
-                    requests.get(URL + 'sendMessage',
-                                 params=dict(chat_id=update['message']['chat']['id'],
-                                             text=WRONG_URL_TEXT))
-    # Let's wait a few seconds for new updates
-    sleep(1)
+if len(sys.argv) > 1:
+    sticker_url = sys.argv[1]
 
+    request = requests.get(sticker_url).text
+    sticker_page = BeautifulSoup(request, "html.parser")
+    sticker_title = sticker_page.title.string
 
+    save_stickers(sticker_page, sticker_title)
+else:
+    print("Usage: " + sys.argv[0] + " (URL_OF_STICKER_PACK)")
+    sys.exit()
